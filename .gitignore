@@ -1,1 +1,6 @@
 .env
+logs/
+__pycache__/
+*.parquet
+*.csv
+*.gz    
