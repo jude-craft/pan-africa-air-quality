@@ -4,3 +4,16 @@ __pycache__/
 *.parquet
 *.csv
 *.gz    
+*.pyc
+.pytest_cache/
+config/simple_auth_password.jsonconfig/simple_auth_passwords.json
+
+.venv
+
+
+# Terraform local state and locks
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/.terraform.lock.hcl
+terraform/*.tfvars
