@@ -9,13 +9,10 @@ def verify_s3_buckets():
     """
     Authenticates with AWS and verifies the existence of Medallion architecture buckets.
     """
-    # Initialize the low-level S3 client
-    s3_client = boto3.client(
-        's3',
-        aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
-        aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
-        region_name=os.getenv('AWS_DEFAULT_REGION')
-    )
+    # Initialize the low-level S3 client.
+    # Boto3 automatically intercepts AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY 
+    # from the environment variables loaded by dotenv.
+    s3_client = boto3.client('s3', region_name=os.getenv('AWS_DEFAULT_REGION'))
     
     # Fetch all buckets associated with the IAM user
     response = s3_client.list_buckets()
@@ -40,7 +37,7 @@ def verify_s3_buckets():
     if all_passed:
         print("\n🚀 SUCCESS: Phase 1 Infrastructure and AWS connectivity verified.\n")
     else:
-        print("\n⚠️️ FAILURE: One or more required buckets are missing. Check AWS console or .env.\n")
+        print("\n⚠ FAILURE: One or more required buckets are missing. Check AWS console or .env.\n")
 
 if __name__ == "__main__":
     verify_s3_buckets()
