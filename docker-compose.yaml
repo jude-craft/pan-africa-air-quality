@@ -15,6 +15,7 @@ x-airflow-common: &airflow-common
     BRONZE_BUCKET: ${BRONZE_BUCKET:?}
     SILVER_BUCKET: ${SILVER_BUCKET:?}
     GOLD_BUCKET: ${GOLD_BUCKET:?}
+    OPENAQ_API_KEY: ${OPENAQ_API_KEY:?}
     PYTHONPATH: /opt/airflow
   volumes:
     - ./dags:/opt/airflow/dags
