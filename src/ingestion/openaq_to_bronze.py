@@ -1,23 +1,31 @@
 """
-Phase 3: Bronze Ingestion.
+Phase 3: Bronze Ingestion — Daily.
 
-Server-side copies daily OpenAQ gzip files from the public
-openaq-data-archive bucket into our own Bronze S3 bucket, partitioned
-by country/location/date. Idempotent: skips files that already exist
-at the destination, and treats a missing source file as a normal
-"station didn't report that day" case, not an error.
+Defaults to yesterday (UTC) when no date is given, since a station's
+current day isn't fully reported partway through. Only processes
+locations classified as active (see location_filters.py) — running
+against all 566 locations daily, forever, wastes calls on the ~181
+that will never report again (confirmed in testing: 297/566 returned
+skipped_no_source for a single day).
 """
 
 import os
-import json
+import sys
+import time
+import argparse
 import boto3
+from datetime import datetime, timezone, timedelta
+from botocore.config import Config
 from botocore.exceptions import ClientError
+from dotenv import load_dotenv
+
+sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
+from src.ingestion.location_filters import load_locations, classify_locations
 
 OPENAQ_SOURCE_BUCKET = "openaq-data-archive"
 
 
 def build_source_key(location_id: int, date_str: str) -> str:
-    """date_str format: YYYY-MM-DD"""
     year, month, day = date_str.split("-")
     return (
         f"records/csv.gz/locationid={location_id}/"
@@ -47,11 +55,6 @@ def destination_exists(s3_client, bucket: str, key: str) -> bool:
 
 def copy_location_day(s3_client, bronze_bucket: str, location_id: int,
                        country_code: str, date_str: str) -> str:
-    """
-    Copies one location's data for one date from the public OpenAQ
-    archive into our Bronze bucket. Returns a status string:
-    'copied', 'skipped_exists', or 'skipped_no_source'.
-    """
     source_key = build_source_key(location_id, date_str)
     dest_key = build_destination_key(location_id, country_code, date_str)
 
@@ -71,16 +74,10 @@ def copy_location_day(s3_client, bronze_bucket: str, location_id: int,
         raise
 
 
-def ingest_date(date_str: str, locations_metadata_path: str, bronze_bucket: str) -> dict:
-    """
-    Runs the Bronze copy for every known location, for a single date.
-    Used for local testing — the DAG calls copy_location_day directly
-    per mapped task instance instead.
-    """
-    with open(locations_metadata_path) as f:
-        locations = json.load(f)
-
-    s3_client = boto3.client("s3", region_name=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"))
+def ingest_date(date_str: str, locations: list[dict], bronze_bucket: str) -> dict:
+    s3_client = boto3.client(
+        "s3", config=Config(retries={"max_attempts": 5, "mode": "adaptive"})
+    )
     summary = {"copied": 0, "skipped_exists": 0, "skipped_no_source": 0}
 
     for loc in locations:
@@ -92,13 +89,30 @@ def ingest_date(date_str: str, locations_metadata_path: str, bronze_bucket: str)
     return summary
 
 
-if __name__ == "__main__":
-    import sys
-    from dotenv import load_dotenv
-    
+def default_ingestion_date() -> str:
+    """Yesterday, UTC — today's data isn't fully reported yet."""
+    yesterday = datetime.now(timezone.utc) - timedelta(days=1)
+    return yesterday.strftime("%Y-%m-%d")
 
+
+if __name__ == "__main__":
     load_dotenv()
-    date_str = sys.argv[1] if len(sys.argv) > 1 else "2026-10-01"
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "date", nargs="?", default=None,
+        help="YYYY-MM-DD. Defaults to yesterday (UTC) if omitted — the normal daily-run case."
+    )
+    args = parser.parse_args()
+
+    date_str = args.date or default_ingestion_date()
     bronze_bucket = os.environ["BRONZE_BUCKET"]
-    result = ingest_date(date_str, "config/locations_metadata.json", bronze_bucket)
+
+    all_locations = load_locations()
+    active_locations, inactive_locations = classify_locations(all_locations)
+
+    print(f"Ingesting {date_str} | {len(active_locations)} active locations "
+          f"({len(inactive_locations)} inactive, skipped)")
+
+    result = ingest_date(date_str, active_locations, bronze_bucket)
     print(f"Bronze ingestion for {date_str}: {result}")
