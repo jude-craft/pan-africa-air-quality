@@ -1,0 +1,30 @@
+name: Daily Bronze Ingestion
+
+on:
+  schedule:
+    # 03:17 UTC daily — intentionally off the top of the hour, since
+    # GitHub Actions scheduled runs queue up and can lag during
+    # high-traffic periods right on the hour
+    - cron: "17 3 * * *"
+  workflow_dispatch: {}   # manual trigger, for testing before trusting the schedule
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run Bronze ingestion
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
+          BRONZE_BUCKET: ${{ secrets.BRONZE_BUCKET }}
+          OPENAQ_API_KEY: ${{ secrets.OPENAQ_API_KEY }}
+        run: uv run python src/ingestion/openaq_to_bronze.py
