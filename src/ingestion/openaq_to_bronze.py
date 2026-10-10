@@ -54,7 +54,7 @@ def destination_exists(s3_client, bucket: str, key: str) -> bool:
 
 
 def copy_location_day(s3_client, bronze_bucket: str, location_id: int,
-                       country_code: str, date_str: str) -> str:
+                      country_code: str, date_str: str) -> str:
     source_key = build_source_key(location_id, date_str)
     dest_key = build_destination_key(location_id, country_code, date_str)
 
@@ -69,14 +69,16 @@ def copy_location_day(s3_client, bronze_bucket: str, location_id: int,
         )
         return "copied"
     except ClientError as e:
-        if e.response["Error"]["Code"] in ("404", "NoSuchKey"):
+        if e.response["Error"]["Code"] in ("404", "NoSuchKey", "AccessDenied", "403"):
             return "skipped_no_source"
         raise
 
 
 def ingest_date(date_str: str, locations: list[dict], bronze_bucket: str) -> dict:
     s3_client = boto3.client(
-        "s3", config=Config(retries={"max_attempts": 5, "mode": "adaptive"})
+        "s3",
+        region_name=os.environ.get("AWS_DEFAULT_REGION", "us-east-1"),
+        config=Config(retries={"max_attempts": 5, "mode": "adaptive"}),
     )
     summary = {"copied": 0, "skipped_exists": 0, "skipped_no_source": 0}
 
